@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Film-Watchlist</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f2f4f8; color: #1d2330; }
+  header { background: #2b3a67; color: #fff; padding: 14px 16px; position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 18px; margin: 0; }
+  main { padding: 12px; max-width: 600px; margin: 0 auto; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+  .primary { background: #3d6af2; color: #fff; }
+  .ghost { background: #e4e8f1; }
+  .danger { background: #e5484d; color: #fff; }
+  .card { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px #0001; }
+  .card h3 { margin: 0 0 4px; font-size: 16px; }
+  .meta { color: #5d667a; font-size: 14px; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .actions button { padding: 6px 10px; font-size: 14px; }
+  .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: #ffe9a8; margin-left: 6px; }
+  .badge.seen { background: #c8f0d2; }
+  dialog { border: 0; border-radius: 14px; padding: 18px; width: min(92vw, 420px); }
+  dialog::backdrop { background: #0006; }
+  label { display: block; font-size: 14px; margin: 10px 0 4px; }
+  input[type=text], input[type=number], input[type=url], select { width: 100%; padding: 10px; border: 1px solid #c5cbd9; border-radius: 8px; font: inherit; }
+  .row { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  #status { text-align: center; color: #5d667a; padding: 16px; }
+  .filter { display: flex; gap: 8px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Film-Watchlist</h1>
+  <div><button class="ghost" id="btnSettings">⚙️</button> <button class="primary" id="btnAdd">+ Neu</button></div>
+</header>
+
+<main>
+  <div class="filter">
+    <select id="filterWatched">
+      <option value="">Alle</option>
+      <option value="false">Noch nicht gesehen</option>
+      <option value="true">Gesehen</option>
+    </select>
+  </div>
+  <div id="status"></div>
+  <div id="list"></div>
+</main>
+
+<dialog id="dlgMovie">
+  <h2 id="dlgTitle">Film</h2>
+  <label>Titel</label><input type="text" id="fTitle">
+  <label>Genre</label><input type="text" id="fGenre">
+  <label>Jahr</label><input type="number" id="fYear" min="1888" max="2100">
+  <label>Bewertung (1–10, optional)</label><input type="number" id="fRating" min="1" max="10">
+  <label><input type="checkbox" id="fWatched"> Schon gesehen</label>
+  <div class="row"><button class="ghost" id="btnCancel">Abbrechen</button><button class="primary" id="btnSave">Speichern</button></div>
+</dialog>
+
+<dialog id="dlgSettings">
+  <h2>API-Adresse</h2>
+  <label>URL deiner Render-API</label>
+  <input type="url" id="fApi" placeholder="https://film-api-xxxx.onrender.com">
+  <div class="row"><button class="ghost" id="btnSettingsCancel">Abbrechen</button><button class="primary" id="btnSettingsSave">Speichern</button></div>
+</dialog>
+
+<script>
+  let apiUrl = "https://film-api-t5po.onrender.com";
+  try { apiUrl = localStorage.getItem("apiUrl") || apiUrl; } catch (e) {}
+  let editId = null;
+
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+
+  async function api(path, options = {}) {
+    const res = await fetch(apiUrl.replace(/\/$/, "") + path, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(typeof err.detail === "string" ? err.detail : "Fehler " + res.status);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function load() {
+    if (!apiUrl) {
+      statusEl.textContent = "Bitte zuerst oben über ⚙️ die API-Adresse eintragen.";
+      $("list").innerHTML = "";
+      return;
+    }
+    statusEl.textContent = "Lade… (der erste Aufruf kann bis zu einer Minute dauern)";
+    try {
+      const w = $("filterWatched").value;
+      const movies = await api("/movies" + (w ? "?watched=" + w : ""));
+      statusEl.textContent = movies.length ? "" : "Keine Filme vorhanden.";
+      render(movies);
+    } catch (e) {
+      statusEl.textContent = "Verbindung fehlgeschlagen: " + e.message;
+    }
+  }
+
+  function render(movies) {
+    const list = $("list");
+    list.innerHTML = "";
+    movies.forEach((m) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      const h = document.createElement("h3");
+      h.textContent = m.title;
+      const badge = document.createElement("span");
+      badge.className = "badge" + (m.watched ? " seen" : "");
+      badge.textContent = m.watched ? "gesehen" : "offen";
+      h.appendChild(badge);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `${m.genre} · ${m.year}` + (m.rating ? ` · ⭐ ${m.rating}/10` : "");
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const bEdit = document.createElement("button");
+      bEdit.className = "ghost"; bEdit.textContent = "Bearbeiten";
+      bEdit.onclick = () => openForm(m);
+      const bDel = document.createElement("button");
+      bDel.className = "danger"; bDel.textContent = "Löschen";
+      bDel.onclick = () => remove(m);
+      actions.append(bEdit, bDel);
+      card.append(h, meta, actions);
+      list.appendChild(card);
+    });
+  }
+
+  function openForm(m) {
+    editId = m ? m.id : null;
+    $("dlgTitle").textContent = m ? "Film bearbeiten" : "Neuer Film";
+    $("fTitle").value = m ? m.title : "";
+    $("fGenre").value = m ? m.genre : "";
+    $("fYear").value = m ? m.year : "";
+    $("fRating").value = m && m.rating ? m.rating : "";
+    $("fWatched").checked = m ? m.watched : false;
+    $("dlgMovie").showModal();
+  }
+
+  async function save() {
+    const body = {
+      title: $("fTitle").value.trim(),
+      genre: $("fGenre").value.trim(),
+      year: parseInt($("fYear").value, 10),
+      watched: $("fWatched").checked,
+      rating: $("fRating").value ? parseInt($("fRating").value, 10) : null,
+    };
+    try {
+      if (editId === null) await api("/movies", { method: "POST", body: JSON.stringify(body) });
+      else await api("/movies/" + editId, { method: "PUT", body: JSON.stringify(body) });
+      $("dlgMovie").close();
+      load();
+    } catch (e) {
+      alert("Speichern fehlgeschlagen: " + e.message);
+    }
+  }
+
+  async function remove(m) {
+    if (!confirm(`„${m.title}“ wirklich löschen?`)) return;
+    try { await api("/movies/" + m.id, { method: "DELETE" }); load(); }
+    catch (e) { alert("Löschen fehlgeschlagen: " + e.message); }
+  }
+
+  $("btnAdd").onclick = () => openForm(null);
+  $("btnCancel").onclick = () => $("dlgMovie").close();
+  $("btnSave").onclick = save;
+  $("filterWatched").onchange = load;
+  $("btnSettings").onclick = () => { $("fApi").value = apiUrl; $("dlgSettings").showModal(); };
+  $("btnSettingsCancel").onclick = () => $("dlgSettings").close();
+  $("btnSettingsSave").onclick = () => {
+    apiUrl = $("fApi").value.trim();
+    try { localStorage.setItem("apiUrl", apiUrl); } catch (e) {}
+    $("dlgSettings").close();
+    load();
+  };
+
+  load();
+</script>
+</body>
+</html>

@@ -1,7 +1,9 @@
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Film-Watchlist API")
@@ -35,6 +37,12 @@ movies: list[Movie] = [
     Movie(id=2, title="Das Boot", genre="Drama", year=1981, watched=False),
 ]
 next_id = 3
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    """Liefert die Handy-Web-App (index.html) unter der Hauptadresse aus."""
+    return FileResponse(Path(__file__).parent / "index.html")
 
 
 def find_movie(movie_id: int) -> Movie:
